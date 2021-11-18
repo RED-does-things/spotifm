@@ -1,0 +1,549 @@
+ #!/bin/bash
+
+#options
+opt0=":f:"
+opts=":1dat2f:"
+opts2=":s:m:l:ybzx"
+
+#defaults
+filename="./newdirectory/1_compiled"
+directory="${filename%/*}"
+
+#while loop checks for custom filename then resets optind
+while getopts ${opts} opt; do #f - highest priority option : MUST be first to take effect - custom file directory
+    case ${opt} in
+    f)
+        arg=$OPTARG
+
+        #make sure its in correct format TODO check if one '/' works as well (is ./ optional or no - should probably not do this...
+        if [[ $arg =~ .+/.+/.+ ]]; then
+            filename=$arg
+            directory="${filename%/*}"
+            
+            echo "filename set to $filename"
+        else
+            echo "invalid filename for step 1, setting as file_name for step2"
+            file_name=$arg
+            
+            echo "file_name set to $file_name"
+        fi
+
+        OPTIND=1
+        break
+    ;;
+    
+    *)
+        OPTIND=1
+        break
+    ;;
+    
+    esac
+done
+
+
+##---------------------------------------------------------------------------------------------------------------------------------
+while getopts ${opts} opt; do #master while loop, decides if running program as 1 or 2 - option for all? - define functions and 
+case ${opt} in
+f) #if we changed filename need a way to catch that option since we reset optind
+    #echo "OPTIND reset"
+;;
+
+
+[1]) #Option -1 organize, separate non-songs etc. 
+
+mkdir -p $directory && touch "$filename"
+
+#compile files into one file
+for file in *.csv; do
+    cat $file;
+    echo
+done > $filename
+
+echo "concatenating... lines compiled: "
+cat $filename | wc -l
+
+#----
+#https://www.convertcsv.com/json-to-csv.htm
+#----
+
+#lets cd to my directory so I can stop writing it everywhere
+cd $directory
+
+##manage that file
+step2="2_sorted"
+songs="2.1_songs"
+notsongs="2.2_notsongs"
+
+#sort by date - this should also sort out the header lines and blank lines (only from the endvideo file tbh) - probably should just delete endvideo before running this script
+sort -k1 -n -t, "1_compiled" > $step2 #since i changed the code so much only sort -n is necessary, i never really needed -k1 or -t, tbh since date is the first field...
+
+#remove blanks and header files - can use this syntax to seperate by year if I were so inclined ... o_O I might but be careful that "2020" might exist in the line or even the first value so need to literally search the first 4 characters TODO
+grep '20' $step2 > $songs
+grep -v '20' $step2 > $notsongs
+
+
+##----
+#filter out podcasts and shit here! add strings to filter out in the todelete array. note: the -i command makes the filtering case insensitive
+#note you can also use this to filter out CRINGE
+#TODO move this and anything else you might want to edit by hand to the top of the page? - or not idk
+declare -a todelete=("default thing to delete yo, I hope you don't have a song with this name"
+                     #"Replace"
+                     #"And Uncomment"
+                     #"These Strings"
+                     )
+
+for shittodelete in "${todelete[@]}"; do {
+    echo "seperating $shittodelete ... songs moved: "
+    grep -i "$shittodelete" $songs | wc -l
+    
+    #if you want to change the grep settings then just copy the following 4 lines and write a custom string for every search
+    #shittodelete='name of podcast or whatever here' #<- uncommentthis line if you don't want to use a for loop
+    grep -v -i "$shittodelete" $songs > temp    #takes the songs that do not have the string defined above
+    grep -i "$shittodelete" $songs >> $notsongs #adds the lines that have the filtered words to notsongs
+    mv temp $songs                              #overwrite previous 'songs' file with the new filtered one. can change 'mv' to 'cp' if you want to check intermediate temp file
+    
+} done
+##---
+
+echo "number of songs: "
+cat $songs | wc -l
+
+;;
+
+##---
+d) #details / data on number of songs under/above short listen times
+
+#filter out songs that you didn't really listen to
+#1 the 13th field is if I skipped true false
+#honestly probably wont even search this field first? except for "not skipped songs actually I might" - but don't delete skipped in case I listened to 90% of it It should still count
+
+#based on how long you listened to them
+#the main delimiter. Gonna set to be like 25 seconds? Hard to find a song under 30 seconds but this is safe just in case?
+
+#delimit under 10 sec - need to do complex delimiter stuff to know when inside quotation marks and shit
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 < 10000) {print $0} }
+    ' "2.1_songs" > "3.1_under10"
+    
+#echo "songs with under 10 second listen time:"
+#cat 3.1_under10 | wc -l
+    
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 >= 10000) {print $0} }
+    ' "2.1_songs" > "3.1_over10"
+    
+echo "songs with over 10 second listen time:"
+cat 3.1_over10 | wc -l
+
+#delimit 10-20 seconds
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 < 20000) {print $0} }
+    ' "2.1_songs" > "3.2_under20"
+
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 >= 20000) {print $0} }
+    ' "2.1_songs" > "3.2_over20"
+    
+echo "songs with over 20 second listen time:"
+cat 3.2_over20 | wc -l
+
+#delimit 20-25
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 < 25000) {print $0} }
+    ' "2.1_songs" > "3.3_under25"
+    #lol i already changed one because i saw the value, just changed the rest though
+
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 >= 25000) {print $0} }
+    ' "2.1_songs" > "3.3_over25"
+    
+echo "songs with over 25 second listen time:"
+cat 3.3_over25 | wc -l
+
+#delimit 25 - 30 (i know I have songs between 30 and 40 so thats the upper limit)
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 < 30000) {print $0} }
+    ' "2.1_songs" > "3.4_under30"
+
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]+" #field pattern - regex that describes the FIELD
+    }
+    {if($4 >= 30000) {print $0} }
+    ' "2.1_songs" > "3.4_over30"
+    
+echo "songs with over 30 second listen time:"
+cat 3.4_over30 | wc -l
+
+#I think I've decided just to be safe I'll do 25 second. This seems pretty fair and since theres barely any songs as I decrease this. Increasing the limit is high risk low reward as there might be songs around the 30 second mark
+    
+break
+;;
+
+a) #analyze / auxilliary - put random stuff here that u probbly wont use
+
+#regex for empty name? probably useless tbh ^[^�]+[�][^�]+[�][^�]+[�][^�]+[�][^�]+[�][^�]+[�][^�]+[�][�]
+
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]*" #field pattern - regex that describes the FIELD - gotta include empty fields (changed + to *)
+    }
+    {if($8 == "") {print $0} }
+    ' "2.1_songs" > "X1_ALLemptysongs"
+    
+mkdir -p analysis
+mv X1_ALLemptysongs analysis/1_ALLemptysongs
+cd analysis
+    
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]*" #field pattern - regex that describes the FIELD - gotta include empty fields (changed + to *)
+    }
+    {if($4 >= 25000) {print $0} }
+    ' "1_ALLemptysongs" > "1.2_empty_over25"
+
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]*" #field pattern - regex that describes the FIELD - gotta include empty fields (changed + to *)
+        OFS = "�"
+    }
+    {
+    seconds = $4 / 1000
+    mins = int( seconds / 60 )
+    secs = ( seconds % 60 ) / 100
+    time = mins + secs
+    #print time,$4,$13,$14,$15,$16,$3,$1 #1time - 2time (ms) - 3start - 4end - 5shuffle? - 6skipped? - 7playform - 8timestamp
+    
+    $1 = time
+    $2 = $4
+    
+    print $0
+    
+    }
+    ' "1.2_empty_over25" > "2_tosort"
+
+sort -n 2_tosort > 2.2_sorted
+
+#split into unique times - unique ones are probably doomed. I mean you can sleuth around for a little bit but its totally not worth it for individual plays ESPECIALLY if they are short / not even finished.
+# TODO
+
+#rework:
+#uniq -u --check-chars=10 2.2_sorted > X5.1_unique
+#uniq -d --check-chars=10 2.2_sorted > X5.2_notUniq
+#uniq -D --check-chars=10 2.2_sorted > X5.3_notUniq_FULL
+
+#split into 3A_finished 3B_unfinished
+gawk -F, '
+    BEGIN {
+        FPAT = "[^�]*" #field pattern - regex that describes the FIELD - gotta include empty fields (changed + to *)
+    }
+    {if($4 >= 25000) {print $0} }
+    ' "1.2_empty_over25" > "3A_finished"
+
+#B:
+#split by shuffle, if off maybe can sleuth, if on then can't
+
+#A:
+#gawk that checks ms played 
+    
+;;
+
+t) #evaluate length of time for local files
+rm ./timetemp
+rm ./output
+
+for file in *.mp3; do
+    ffmpeg -i "$file" 2>&1 | grep -oE "[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{2}" >> timetemp
+    count=$(($count+1))
+    
+    ffprobe -loglevel quiet -show_entries format_tags=artist,title,album -i "$file" | sed 's/\[[^]]*\]//g' | cut -d "=" -f 2 | tr '\n' '�' > temp
+    gawk -F, '
+        BEGIN {
+            FPAT = "[^�]*" #field pattern
+            OFS = "�"
+        }
+        {
+            print $2,$3,$4
+        }
+    ' temp >> output
+
+done
+
+echo $count
+
+gawk -F, '
+    BEGIN {
+        FS = ":" #field seperator..... i couldve been doing that lol
+        OFS = "�"
+    }
+    {
+        m = $2
+        s = $3
+        ms = m * 60000 + s * 1000
+        #print ms,$2":"$3 #use this line for readable time
+        print ms,""
+    }
+' timetemp > milliseconds
+
+#ffmpeg -i Ruger\ Hauer\ -\ Täällä.mp3 2>&1 | grep -oE "[0-9]{1}:[0-9]{2}:[0-9]{2}[.][0-9]{2}"
+
+paste -d "" milliseconds output > concatenated
+#paste milliseconds output > concatenated #the character from paste -d is not the same and fucks everything up - jk without a delimiter all hell breaks loose
+
+sort -n concatenated > sorted
+sort -n milliseconds | sed 's/.$//' > ms_sorted
+
+#math
+
+tail -n +2 ms_sorted > ms_altered
+paste -d "�" ms_altered ms_sorted > subtract #probably no longer works
+gawk '
+    BEGIN {
+        FPAT = "[^�]*" #field pattern - wasnt working with FS = [�] ...
+    }
+    {
+        dif = $2 - $1
+        print dif
+    }
+' subtract > difference
+
+
+
+;;
+
+[2]) #Option -2 
+
+##---------------------------------------------------------------------------------------------------------------------------------------------
+#could split songs up year by year and upload every week to an alternate lastfm account to see what my actual top from that year were. (would need multiple accounts if a year had more than 7*3000 songs)
+#need to gather up all the spotify csv into one folder first
+
+#don't forget to cull this year's upload to before I started lastfm - do this first cuz why not
+
+#firstscrob="2020-09-26T21:29:54Z" #copy the date of your first scrobble here - the program will cull all newer scrobbles - maybe theres a cool thing you could do to search your scrobble history to see if it matches your spotify history O_o
+                                    # ^ can always do that later as long as we save the culled songs in a file
+
+#sike, we are just gonna write the line number (first scrobble index) of the first scrobble
+
+
+#defaults
+FSi=0 # TODO ! when I upload this set default setting to -1, or 0 or negative anything really. can even delete this line and it will work since I subtract from empty = -1
+if [[ -z $file_name ]]; then #added this so that it will work with -f option. if no -f is provided this is the default
+    file_name="3.3_over25" #also decide what file to use, I think I wanna use over25 !!!!!!!!make sure the scrobble index is found in the corresponding file!
+fi
+maxlength=3000
+#dbBool=0;
+
+#change defaults, set booleans
+while getopts ${opts2} opt2; do
+    case ${opt2} in
+        l) #Length - chooses alternate file for minimum played length as split by -d option TODO: if d option hasn't been run, then run it here? - no cuz maybe they are running it on any file, just type out whole name
+            file_name=$OPTARG
+            ;;
+        s) #Split - splits the file by argument: FirstScrobbleIndex FSi
+            FSi=$OPTARG
+            ;;
+        m) #Maxlength - sets final amount for how large each toScrobble file will be (default 3000)
+            maxlength=$OPTARG
+            ;;
+        y) #Year - using this flag DOESNT split up the file by year - so it will by default
+            yearBoolean=0
+            ;;
+        b) #degug file - creates debug file if this var is set
+            dbBool=0
+            ;;
+        z) #zork time - will zork songs from under25 into the final file to scrobble
+            zBool=0
+            ;;
+        x) #fix formatting
+            xBool=0
+            ;;
+        *)
+            echo "-2 invalid secondary option" #-h for help TODO
+            #OPTIND=$(($OPTIND-1))
+            #break 2
+            ;;
+    esac
+
+done
+
+#run code with updated values
+
+FSi=$(($FSi-1)) #first scrobble is just easier to explain / find - if FSi not set then it is set to -1 and the following code is skipped
+if [[ $FSi -gt -1 ]]; then #if FSi has been set then split by FSi, if they want all then they didn't set then don't run
+
+    # line count: 
+    LC=$(wc -l < $file_name)
+
+    # length of the bottom file (would-be duplicate scrobbles aka they are already in lastfm):
+    Last=$(( $LC - $FSi ))
+
+    # create the top of file: 
+    head -n $FSi $file_name > 4_toscrobble
+
+    # create bottom of file: 
+    tail -n $Last $file_name > 4_duplicates
+
+    #print lines just to be sure
+    echo "first line of duplicates: $(head -n1 4_duplicates)"
+    echo "last line of toscrobble: $(tail -n1 4_toscrobble)"
+
+    filetoscrobble="4_toscrobble"
+else
+
+    filetoscrobble=$file_name
+
+fi
+
+
+#zork
+if [[ -n $zBool ]]; then
+#add zorking - take songs from under25 and bring them here if they are on a certain list:
+zorkfile="3.3_under25" #good thing i changed it to be all under 25 lol
+rm tempzork
+
+declare -a tozork=("1"
+                     "2"
+                     "3"
+                     "4"
+                     "5"
+                     "6"
+                     )
+
+for shittozork in "${tozork[@]}"; do {
+    echo "zorking $shittozork ... lines moved: "
+    grep -i "$shittozork" $zorkfile | wc -l
+
+    grep "$shittozork" $zorkfile >> zorked #for testing purposes, can comment out - or actually leave this so that people that already uploaded everything else can just upload this
+    grep "$shittozork" $zorkfile >> $filetoscrobble #adds the lines that have the filtered words to filetoscrobble
+    
+} done
+
+sort -d $filetoscrobble > tempfile
+cp tempfile $filetoscrobble
+rm tempfile
+fi
+
+
+#fix formatting
+if [[ -n $xBool ]]; then
+#yo just come edit this part here lol
+declare -a toreplace=("A"
+                     "B"
+                     #add more lines if you want
+                     )
+declare -a replacewith=("a"
+                     "b"
+                     #add more lines if you want - can do  custom formatting here
+                     )
+arraylength=${#toreplace[@]}
+i=0
+while [ $i -lt $arraylength ]; do {
+    sed -i "s/${toreplace[i]}/${replacewith[i]}/g" outputfile
+    echo replaced "${toreplace[i]}" with "${replacewith[i]}"
+    ((i++))
+} done
+
+echo "fixed formatting"
+fi
+
+
+#year
+if [[ -z $yearBoolean ]]; then #if yearboolean is not set ie they did not flag -y to remove splitbyyear functionality
+    
+    #split up the songs to scrobble by year and by maxlength of file
+    line1=$(head -n 1 $filetoscrobble)
+    linex=$(tail -n 1 $filetoscrobble)
+    oldestyear=${line1:0:4} #first 4 chars of first line
+    newestyear=${linex:0:4} #first 4 chars of last line
+
+    years=$(seq $oldestyear 1 $newestyear)
+    for y in $years; do {
+        #make new directory for each year and overwrite existing files
+        mkdir -p $y && file="$y/$y" && touch temp && mv temp $file
+        #takes songs of this year based on first 4 chars of line and writes to file
+        while IFS= read -r line; do {
+        year=${line:0:4} 
+        if [ $year -eq $y ]; then echo $line >> $file ; fi
+        } done < $filetoscrobble
+        
+        cd ./$y
+        echo "seperated year: $y, $(wc -l < $y) songs"
+        
+        #split that file according to maxlength
+        split $y "$y_" -l $maxlength -d #maybe I couldve done this whole project with just csplit hm !!!!!TODO pretty sure I dont subtract by 1 here - ya u don't u dingus
+        #rename split files in a useful manner?
+        echo "split year $y, uploading will take $(($(ls | tail -2 | head -1)+1)) days" 
+        cd ..
+    } done
+    
+else
+
+    #still need to split by maxlength even if not by year
+    mkdir -p toupload
+    split $filetoscrobble toupload/toupload_ -l $maxlength -d
+    
+    cd ./toupload
+    echo "split by length. uploading will take $(($(ls | tail -2 | head -1)+1)) days"
+    cd ..
+
+fi
+
+
+#debugfile
+if [[ -n $dbBool ]]; then
+
+rm -r debug
+mkdir -p debug && touch debug/debugfile
+
+    gawk -F, '
+        BEGIN {
+            FPAT = "[^�]*" #field pattern
+            OFS = "�"
+        }
+        {
+            print $8,$9,$10
+        }
+    ' $filetoscrobble >> debug/debugfile
+
+cd debug
+sort -d debugfile > debugfile2
+uniq debugfile2 debugfile3
+split debugfile3 dbupload_ -l $maxlength -d
+    
+fi
+
+
+
+;;
+
+
+*)
+#invalid input
+echo "undefined option: $OPTARG"
+;;
+esac
+done
+            
+#can i do getopts in another set of optsring so that they are non conflicting? that sounds like the best option along with nested getopts - but test nesting without second string first
+
